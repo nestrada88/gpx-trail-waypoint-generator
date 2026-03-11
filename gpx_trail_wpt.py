@@ -348,16 +348,22 @@ def calculate_3d_distance(point1, point2, distance_method="auto", dataset_size=N
 
     return math.sqrt(horizontal_distance**2 + elevation_diff**2)
 
-def generate_waypoints(points, trail_prefix, step_size):
+def generate_waypoints(points, trail_prefix, step_size, distance_method="auto"):
     waypoints = []
     total_distance = 0
     highest_point = max(points, key=lambda p: p.elevation or 0)
     lowest_point = min(points, key=lambda p: p.elevation or 0)
     cumulative_distance = 0
-
+    dataset_size = len(points)
+    
     # Calculate total trail distance
-    for i in range(1, len(points)):
-        total_distance += calculate_3d_distance(points[i - 1], points[i])
+    for i in range(1, dataset_size):
+        total_distance += calculate_3d_distance(
+            points[i - 1],
+            points[i],
+            distance_method=distance_method,
+            dataset_size=dataset_size
+        )
 
     halfway_distance = total_distance / 2
     current_distance = 0
@@ -367,7 +373,14 @@ def generate_waypoints(points, trail_prefix, step_size):
 
     # Calculate distances and add cumulative markers
     for i in range(1, len(points)):
-        distance = calculate_3d_distance(points[i - 1], points[i])
+    
+        distance = calculate_3d_distance(
+            points[i - 1],
+            points[i],
+            distance_method=distance_method,
+            dataset_size=dataset_size
+        )
+        
         current_distance += distance
         cumulative_distance += distance
 
@@ -891,7 +904,12 @@ def main():
         validate_inputs(args.gpx_file, args.trail_prefix, args.step_size)
         result = parse_gpx_file(args.gpx_file)
         points = result["points"]
-        waypoints = generate_waypoints(points, args.trail_prefix, args.step_size)
+        waypoints = generate_waypoints(
+            points,
+            args.trail_prefix,
+            args.step_size,
+            distance_method=args.distance_method
+        )
         output_file = f"{os.path.splitext(args.gpx_file)[0]}_{args.step_size}_wpt.gpx"
         
         with open(args.gpx_file, "r", encoding="utf-8") as fh:
