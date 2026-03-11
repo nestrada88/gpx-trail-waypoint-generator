@@ -348,72 +348,274 @@ def calculate_3d_distance(point1, point2, distance_method="auto", dataset_size=N
 
     return math.sqrt(horizontal_distance**2 + elevation_diff**2)
 
-def generate_waypoints(points, trail_prefix, step_size, distance_method="auto"):
+def generate_waypoints(points, prefix, step_size, distance_method="auto"):
+    """
+    Generate trail waypoints including:
+
+    - Trail Head
+    - Trail End
+    - Halfway Point
+    - Exact interpolated KM markers
+    - Highest Point
+    - Lowest Point
+
+    This implementation preserves the existing program behavior while
+    improving marker accuracy by interpolating positions along segments.
+    """
+
     waypoints = []
+
+    if not points or len(points) < 2:
+        return waypoints
+
+    # -----------------------------------------------------
+    # Helper: interpolate position along a segment
+    # -----------------------------------------------------
+
+    def interpolate_point(p1, p2, fraction):
+        lat = p1.latitude + fraction * (p2.latitude - p1.latitude)
+        lon = p1.longitude + fraction * (p2.longitude - p1.longitude)
+
+        ele1 = p1.elevation or 0
+        ele2 = p2.elevation or 0
+        ele = ele1 + fraction * (ele2 - ele1)
+
+        return lat, lon, ele
+
+    # -----------------------------------------------------
+    # Initialize start waypoint
+    # -----------------------------------------------------
+
+    start = points[0]
+
+    waypoints.append(
+        create_waypoint(
+            start.latitude,
+            start.longitude,
+            start.elevation,
+            f"{prefix}_TH",
+            "Trail Head"
+        )
+    )
+
+    # -----------------------------------------------------
+    # Track highest and lowest points
+    # -----------------------------------------------------
+
+    highest_point = start
+    lowest_point = start
+
+    # -----------------------------------------------------
+    # Compute total distance (for halfway marker)
+    # -----------------------------------------------------
+
     total_distance = 0
-    highest_point = max(points, key=lambda p: p.elevation or 0)
-    lowest_point = min(points, key=lambda p: p.elevation or 0)
-    cumulative_distance = 0
-    dataset_size = len(points)
-    
-    # Calculate total trail distance
-    for i in range(1, dataset_size):
+
+    for i in range(1, len(points)):
         total_distance += calculate_3d_distance(
             points[i - 1],
             points[i],
-            distance_method=distance_method,
-            dataset_size=dataset_size
+            distance_method
         )
 
     halfway_distance = total_distance / 2
-    current_distance = 0
 
-    # Add Trail Head
-    waypoints.append(create_waypoint(points[0], f"{trail_prefix}_TH", "Trail Head"))
+    # -----------------------------------------------------
+    # Distance tracking
+    # -----------------------------------------------------
 
-    # Calculate distances and add cumulative markers
+    cumulative_distance = 0
+    step_meters = step_size * 1000
+
+    next_marker_distance = step_meters
+    km_index = 1
+
+    halfway_added = False
+
+    # -----------------------------------------------------
+    # Main segment loop
+    # -----------------------------------------------------
+
     for i in range(1, len(points)):
-    
-        distance = calculate_3d_distance(
-            points[i - 1],
-            points[i],
-            distance_method=distance_method,
-            dataset_size=dataset_size
+
+        p1 = points[i - 1]
+        p2 = points[i]
+
+        segment_distance = calculate_3d_distance(
+            p1,
+            p2,
+            distance_method
         )
-        
-        current_distance += distance
-        cumulative_distance += distance
 
-        # Add Halfway Point
-        if halfway_distance and current_distance >= halfway_distance:
-            waypoints.append(create_waypoint(points[i], f"{trail_prefix}_HLF", "Halfway Point"))
-            halfway_distance = None  # Ensure only one halfway point is added
+        # Update highest and lowest elevation
+        if (p2.elevation or 0) > (highest_point.elevation or 0):
+            highest_point = p2
 
-        # Add cumulative distance markers
-        if cumulative_distance >= step_size * 1000:
-            km_marker = int(current_distance // 1000)
-            waypoints.append(create_waypoint(points[i], f"{trail_prefix}_KM{km_marker:02}", f"{km_marker} km Marker"))
-            cumulative_distance = 0
+        if (p2.elevation or 0) < (lowest_point.elevation or 0):
+            lowest_point = p2
 
-    # Add Trail End
-    waypoints.append(create_waypoint(points[-1], f"{trail_prefix}_TE", "Trail End"))
+        # -------------------------------------------------
+        # KM marker interpolation
+        # -------------------------------------------------
 
-    # Add Highest and Lowest Points
-    waypoints.append(create_waypoint(highest_point, f"{trail_prefix}_HGH", "Highest Point"))
-    waypoints.append(create_waypoint(lowest_point, f"{trail_prefix}_LWT", "Lowest Point"))
+        while cumulative_distance + segment_distance >= next_marker_distance:
+
+            distance_into_segment = next_marker_distance - cumulative_distance
+
+            if segment_distance == 0:
+                break
+
+            fraction = distance_into_segment / segment_distance
+
+            lat, lon, ele = interpolate_point(p1, p2, fraction)
+
+            waypoints.append(
+                create_waypoint(
+                    lat,
+                    lon,
+                    ele,
+                    f"{prefix}_KM{km_index:02d}",
+                    f"{km_index} km Marker"
+                )
+            )
+
+            km_index += 1
+            next_marker_distance = km_index * step_meters
+
+        # -------------------------------------------------
+        # Halfway marker interpolation
+        # -------------------------------------------------
+
+        if (
+            not halfway_added and
+            cumulative_distance + segment_distance >= halfway_distance
+        ):
+
+            distance_into_segment = halfway_distance - cumulative_distance
+
+            if segment_distance > 0:
+                fraction = distance_into_segment / segment_distance
+
+                lat, lon, ele = interpolate_point(p1, p2, fraction)
+
+                waypoints.append(
+                    create_waypoint(
+                        lat,
+                        lon,
+                        ele,
+                        f"{prefix}_HLF",
+                        "Halfway Point"
+                    )
+                )
+
+                halfway_added = True
+
+        cumulative_distance += segment_distance
+
+    # -----------------------------------------------------
+    # Trail End waypoint
+    # -----------------------------------------------------
+
+    end = points[-1]
+
+    waypoints.append(
+        create_waypoint(
+            end.latitude,
+            end.longitude,
+            end.elevation,
+            f"{prefix}_TE",
+            "Trail End"
+        )
+    )
+
+    # -----------------------------------------------------
+    # Highest elevation waypoint
+    # -----------------------------------------------------
+
+    waypoints.append(
+        create_waypoint(
+            highest_point.latitude,
+            highest_point.longitude,
+            highest_point.elevation,
+            f"{prefix}_HGH",
+            "Highest Point"
+        )
+    )
+
+    # -----------------------------------------------------
+    # Lowest elevation waypoint
+    # -----------------------------------------------------
+
+    waypoints.append(
+        create_waypoint(
+            lowest_point.latitude,
+            lowest_point.longitude,
+            lowest_point.elevation,
+            f"{prefix}_LWT",
+            "Lowest Point"
+        )
+    )
 
     return waypoints
 
-def create_waypoint(point, name, description):
-    waypoint = gpxpy.gpx.GPXWaypoint(
-        latitude=point.latitude,
-        longitude=point.longitude,
-        elevation=point.elevation,
-        name=name,
-        description=description,
-        time=point.time
-    )
-    return waypoint
+def create_waypoint(*args):
+    """
+    Create a GPX waypoint.
+
+    Supported call patterns:
+
+    1. create_waypoint(point, name, description)
+       where `point` is a GPXTrackPoint
+
+    2. create_waypoint(lat, lon, ele, name, description)
+
+    This preserves backward compatibility while supporting
+    interpolated coordinate creation.
+    """
+
+    # --------------------------------------------------
+    # Pattern 1: existing implementation
+    # --------------------------------------------------
+
+    if len(args) == 3:
+
+        point, name, description = args
+
+        waypoint = gpxpy.gpx.GPXWaypoint(
+            latitude=point.latitude,
+            longitude=point.longitude,
+            elevation=point.elevation,
+            name=name,
+            description=description,
+            time=point.time
+        )
+
+        return waypoint
+
+    # --------------------------------------------------
+    # Pattern 2: interpolated coordinates
+    # --------------------------------------------------
+
+    elif len(args) == 5:
+
+        lat, lon, ele, name, description = args
+
+        waypoint = gpxpy.gpx.GPXWaypoint(
+            latitude=lat,
+            longitude=lon,
+            elevation=ele,
+            name=name,
+            description=description
+        )
+
+        return waypoint
+
+    else:
+        raise TypeError(
+            "create_waypoint() expected either "
+            "(point, name, description) or "
+            "(lat, lon, ele, name, description)"
+        )
 
 def save_gpx_file(
     original_gpx,
