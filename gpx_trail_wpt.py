@@ -342,6 +342,12 @@ def calculate_3d_distance(point1, point2, distance_method="auto", dataset_size=N
     """
 
     # ------------------------------------------------------------------
+    # Micro-optimization: identical object fast-path
+    # ------------------------------------------------------------------
+    if point1 is point2:
+        return 0.0
+
+    # ------------------------------------------------------------------
     # Coordinate validation
     # ------------------------------------------------------------------
 
@@ -361,7 +367,6 @@ def calculate_3d_distance(point1, point2, distance_method="auto", dataset_size=N
     method = distance_method
 
     if distance_method == "auto":
-
         if dataset_size and dataset_size > AUTO_METHOD_THRESHOLD:
             method = "haversine"
         else:
@@ -394,7 +399,6 @@ def calculate_3d_distance(point1, point2, distance_method="auto", dataset_size=N
         horizontal_distance = EARTH_RADIUS_M * c
 
     else:
-
         raise ValueError(
             "Invalid distance method. Allowed values: "
             "'auto', 'geodesic', 'haversine'."
@@ -405,11 +409,8 @@ def calculate_3d_distance(point1, point2, distance_method="auto", dataset_size=N
     # ------------------------------------------------------------------
 
     if point1.elevation is not None and point2.elevation is not None:
-
         elevation_diff = point2.elevation - point1.elevation
-
     else:
-
         elevation_diff = 0.0
 
     # ------------------------------------------------------------------
