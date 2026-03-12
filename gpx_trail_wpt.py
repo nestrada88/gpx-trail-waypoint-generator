@@ -17,7 +17,7 @@ from geopy.distance import geodesic
 EARTH_RADIUS_M = 6371000
 AUTO_METHOD_THRESHOLD = 50000
 
-def validate_inputs(gpx_file: str, trail_prefix: str, step_size: float) -> None:
+def validate_inputs(gpx, gpx_file: str, trail_prefix: str, step_size: float) -> None:
     """
     Validate command-line inputs for the GPX trail waypoint generator.
 
@@ -109,14 +109,7 @@ def validate_inputs(gpx_file: str, trail_prefix: str, step_size: float) -> None:
 
     # ------------------------------------------------------------------
     # 3. GPX STRUCTURAL VALIDATION
-    # ------------------------------------------------------------------
-
-    try:
-        with open(gpx_file, "r", encoding="utf-8") as f:
-            gpx = gpxpy.parse(f)
-    except Exception as exc:
-        raise ValueError(f"Failed to parse GPX file: {exc}") from exc
-
+    # -----------------------------------------------------------------
     if not gpx.tracks:
         raise ValueError("GPX file contains no <trk> elements.")
 
@@ -154,11 +147,7 @@ def validate_inputs(gpx_file: str, trail_prefix: str, step_size: float) -> None:
                     f"Unrealistic elevation at point {idx}: {point.elevation}"
                 )
 
-def parse_gpx_file(
-    gpx_file: str,
-    strict: bool = True,
-    max_points: int = 200000
-):
+def parse_gpx_file(gpx, strict=True, max_points=200000):
     """
     Parse a GPX file and extract track points.
 
@@ -187,13 +176,6 @@ def parse_gpx_file(
     ValueError
         If the GPX structure is invalid.
     """
-
-    try:
-        with open(gpx_file, "r", encoding="utf-8") as f:
-            gpx = gpxpy.parse(f)
-    except Exception as exc:
-        raise ValueError(f"Unable to parse GPX file: {exc}") from exc
-
     if not gpx.tracks:
         raise ValueError("GPX file contains no <trk> elements.")
 
@@ -1191,8 +1173,12 @@ def main():
     args = parser.parse_args()
 
     try:
-        validate_inputs(args.gpx_file, args.trail_prefix, args.step_size)
-        result = parse_gpx_file(args.gpx_file)
+        with open(args.gpx_file, "r", encoding="utf-8") as fh:
+            gpx = gpxpy.parse(fh)
+
+        validate_inputs(gpx, args.gpx_file, args.trail_prefix, args.step_size)
+
+        result = parse_gpx_file(gpx)
         points = result["points"]
         
         elevation_stats = compute_elevation_statistics(points)
@@ -1207,8 +1193,7 @@ def main():
         
         output_file = f"{os.path.splitext(args.gpx_file)[0]}_{args.step_size}_wpt.gpx"
         
-        with open(args.gpx_file, "r", encoding="utf-8") as fh:
-            original_gpx = gpxpy.parse(fh)
+        original_gpx = gpx
 
         save_gpx_file(
             original_gpx=original_gpx,
