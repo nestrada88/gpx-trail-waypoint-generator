@@ -248,6 +248,94 @@ def parse_gpx_file(
         "total_points": len(all_points),
     }
 
+def compute_elevation_statistics(trackpoints):
+    """
+    Compute core elevation statistics from a sequence of GPX trackpoints.
+
+    Metrics computed:
+        - total_ascent
+        - total_descent
+        - max_elevation
+        - min_elevation
+        - elevation_range
+
+    Parameters
+    ----------
+    trackpoints : Iterable
+        Sequence of GPX trackpoints containing an 'elevation' attribute.
+
+    Returns
+    -------
+    dict
+        {
+            "total_ascent": float,
+            "total_descent": float,
+            "max_elevation": float,
+            "min_elevation": float,
+            "elevation_range": float
+        }
+    """
+
+    total_ascent = 0.0
+    total_descent = 0.0
+    max_elevation = None
+    min_elevation = None
+    prev_elevation = None
+
+    for point in trackpoints:
+        ele = getattr(point, "elevation", None)
+
+        # Skip points without elevation
+        if ele is None:
+            continue
+
+        if max_elevation is None or ele > max_elevation:
+            max_elevation = ele
+
+        if min_elevation is None or ele < min_elevation:
+            min_elevation = ele
+
+        if prev_elevation is not None:
+            delta = ele - prev_elevation
+
+            if delta > 0:
+                total_ascent += delta
+            elif delta < 0:
+                total_descent += abs(delta)
+
+        prev_elevation = ele
+
+    if max_elevation is None or min_elevation is None:
+        raise ValueError("Elevation statistics cannot be computed: no elevation data found.")
+
+    elevation_range = max_elevation - min_elevation
+
+    return {
+        "total_ascent": round(total_ascent, 2),
+        "total_descent": round(total_descent, 2),
+        "max_elevation": round(max_elevation, 2),
+        "min_elevation": round(min_elevation, 2),
+        "elevation_range": round(elevation_range, 2),
+    }
+    
+def print_elevation_statistics(stats):
+    """
+    Print elevation statistics in a structured CLI format.
+
+    Parameters
+    ----------
+    stats : dict
+        Output dictionary returned by compute_elevation_statistics().
+    """
+
+    print("\nElevation Statistics")
+    print("--------------------")
+    print(f"Total Ascent:     {stats['total_ascent']:.2f} m")
+    print(f"Total Descent:    {stats['total_descent']:.2f} m")
+    print(f"Max Elevation:    {stats['max_elevation']:.2f} m")
+    print(f"Min Elevation:    {stats['min_elevation']:.2f} m")
+    print(f"Elevation Range:  {stats['elevation_range']:.2f} m")
+
 def calculate_3d_distance(point1, point2, distance_method="auto", dataset_size=None):
     """
     Compute the 3D distance between two GPX track points.
@@ -1106,12 +1194,17 @@ def main():
         validate_inputs(args.gpx_file, args.trail_prefix, args.step_size)
         result = parse_gpx_file(args.gpx_file)
         points = result["points"]
+        
+        elevation_stats = compute_elevation_statistics(points)
+        print_elevation_statistics(elevation_stats)
+        
         waypoints = generate_waypoints(
             points,
             args.trail_prefix,
             args.step_size,
             distance_method=args.distance_method
         )
+        
         output_file = f"{os.path.splitext(args.gpx_file)[0]}_{args.step_size}_wpt.gpx"
         
         with open(args.gpx_file, "r", encoding="utf-8") as fh:
