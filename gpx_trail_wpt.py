@@ -429,8 +429,13 @@ def generate_waypoints(points, prefix, step_size, distance_method="auto"):
     - Highest Point
     - Lowest Point
 
-    This implementation preserves the existing program behavior while
-    improving marker accuracy by interpolating positions along segments.
+    Performance improvements added:
+
+    1. Segment distance caching
+    2. Cumulative distance array
+
+    These optimizations eliminate redundant distance calculations while
+    preserving all original behavior and waypoint placement logic.
     """
 
     waypoints = []
@@ -476,25 +481,38 @@ def generate_waypoints(points, prefix, step_size, distance_method="auto"):
     lowest_point = start
 
     # -----------------------------------------------------
-    # Compute total distance (for halfway marker)
+    # PRECOMPUTE SEGMENT DISTANCES (distance caching)
     # -----------------------------------------------------
 
-    total_distance = 0
+    segment_distances = []
+    dataset_size = len(points)
 
-    for i in range(1, len(points)):
-        total_distance += calculate_3d_distance(
+    for i in range(1, dataset_size):
+        d = calculate_3d_distance(
             points[i - 1],
             points[i],
-            distance_method
+            distance_method,
+            dataset_size=dataset_size
         )
+        segment_distances.append(d)
 
+    # -----------------------------------------------------
+    # BUILD CUMULATIVE DISTANCE ARRAY
+    # -----------------------------------------------------
+
+    cumulative_distances = [0.0]
+
+    for d in segment_distances:
+        cumulative_distances.append(cumulative_distances[-1] + d)
+
+    total_distance = cumulative_distances[-1]
     halfway_distance = total_distance / 2
 
     # -----------------------------------------------------
     # Distance tracking
     # -----------------------------------------------------
 
-    cumulative_distance = 0
+    cumulative_distance = 0.0
     step_meters = step_size * 1000
 
     next_marker_distance = step_meters
@@ -506,16 +524,12 @@ def generate_waypoints(points, prefix, step_size, distance_method="auto"):
     # Main segment loop
     # -----------------------------------------------------
 
-    for i in range(1, len(points)):
+    for i in range(1, dataset_size):
 
         p1 = points[i - 1]
         p2 = points[i]
 
-        segment_distance = calculate_3d_distance(
-            p1,
-            p2,
-            distance_method
-        )
+        segment_distance = segment_distances[i - 1]
 
         # Update highest and lowest elevation
         if (p2.elevation or 0) > (highest_point.elevation or 0):
@@ -557,8 +571,8 @@ def generate_waypoints(points, prefix, step_size, distance_method="auto"):
         # -------------------------------------------------
 
         if (
-            not halfway_added and
-            cumulative_distance + segment_distance >= halfway_distance
+            not halfway_added
+            and cumulative_distance + segment_distance >= halfway_distance
         ):
 
             distance_into_segment = halfway_distance - cumulative_distance
