@@ -554,13 +554,21 @@ def generate_waypoints(points, prefix, step_size, distance_method="auto"):
 
             lat, lon, ele = interpolate_point(p1, p2, fraction)
 
+            marker_distance_km = next_marker_distance / 1000
+            marker_distance_text = f"{marker_distance_km:g}"
+            marker_name_suffix = (
+                f"{int(marker_distance_km):02d}"
+                if marker_distance_km.is_integer()
+                else marker_distance_text
+            )
+
             waypoints.append(
                 create_waypoint(
                     lat,
                     lon,
                     ele,
-                    f"{prefix}_KM{km_index:02d}",
-                    f"{km_index} km Marker"
+                    f"{prefix}_KM{marker_name_suffix}",
+                    f"{marker_distance_text} km Marker"
                 )
             )
 
